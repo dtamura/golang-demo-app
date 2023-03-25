@@ -1,36 +1,33 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
 	log "github.com/sirupsen/logrus"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func pingHandler(w http.ResponseWriter, r *http.Request) {
 
-	span, _ := tracer.StartSpanFromContext(r.Context(), "ping-handler")
+	span := trace.SpanFromContext(r.Context())
 
-	msg := ping(span)
-
+	msg := ping(r.Context())
 	log.WithFields(log.Fields{
 		"dd": getDDLogFields(span),
 	}).Info(msg)
-
-	span.SetTag("ping", msg)
-
-	span.Finish()
+	span.SetAttributes(attribute.String("ping", msg))
 
 	// Response
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"msg": msg})
 }
 
-func ping(parent ddtrace.Span) string {
-	span := tracer.StartSpan("ping", tracer.ChildOf(parent.Context()))
-	defer span.Finish()
+func ping(ctx context.Context) string {
+	_, span := tracer.Start(ctx, "ping")
+	defer span.End()
 
 	// // create http request
 	// client := &http.Client{}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -11,8 +12,17 @@ import (
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 
-	gintrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/gin-gonic/gin"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+)
+
+var (
+	tracer = otel.Tracer("test-tracer")
 )
 
 func init() {
@@ -38,7 +48,7 @@ func setupRouter() *gin.Engine {
 	r := gin.New()
 
 	r.Use(gin.Recovery()) // panic時に500エラーを返却
-	r.Use(gintrace.Middleware("", gintrace.WithIgnoreRequest(ignoreGinTracingRequest)))
+	r.Use(otelgin.Middleware("", otelgin.WithFilter(ignoreTracingRequest)))
 	r.Use(loggingHandler)
 
 	// Ping test
@@ -50,15 +60,42 @@ func setupRouter() *gin.Engine {
 
 // ロギング・トレース対象外
 func ignoreTracingRequest(r *http.Request) bool {
-	return r.RequestURI == "/healthz" || strings.HasPrefix(r.RequestURI, "/static")
+	return !(r.RequestURI == "/healthz" || strings.HasPrefix(r.RequestURI, "/static"))
 }
-func ignoreGinTracingRequest(c *gin.Context) bool {
-	return ignoreTracingRequest(c.Request)
+
+func initProvider() (func(context.Context) error, error) {
+	ctx := context.Background()
+
+	resource, err := resource.New(ctx,
+		resource.WithAttributes(
+		// the service name used to display traces in backends
+		),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create resource: %w", err)
+	}
+
+	client := otlptracehttp.NewClient()
+	exporter, err := otlptrace.New(ctx, client)
+	if err != nil {
+		return nil, fmt.Errorf("creating OTLP trace exporter: %w", err)
+	}
+
+	tracerProvider := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(resource),
+	)
+	otel.SetTracerProvider(tracerProvider)
+
+	return tracerProvider.Shutdown, nil
 }
 
 func main() {
-	tracer.Start()
-	defer tracer.Stop()
+	// init Otel
+	shutdown, err := initProvider()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// Gin mode:
 	//  - using env:   export GIN_MODE=release
@@ -96,6 +133,11 @@ func main() {
 	// Doesn't block if no connections, but will otherwise wait
 	// until the timeout deadline.
 	srv.Shutdown(ctx)
+
+	if err := shutdown(ctx); err != nil { // Otel
+		log.Fatal("failed to shutdown TracerProvider: %w", err)
+	}
+
 	// Optionally, you could run srv.Shutdown in a goroutine and block on
 	// <-ctx.Done() if your application should wait for other services
 	// to finalize based on context cancellation.

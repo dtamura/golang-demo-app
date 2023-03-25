@@ -28,18 +28,14 @@ spec:
           ports:
             - containerPort: 3000
           env:
-            - name: DD_AGENT_HOST
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://opentelemetry-collector.opentelemetry-collector:4318
+            - name: POD_IP
               valueFrom:
                 fieldRef:
-                  fieldPath: status.hostIP
-            - name: DD_ENV
-              value: prod
-            - name: DD_SERVICE
-              value: golang-demo-ping
-            - name: DD_VERSION
-              value: "0.0.1"
-            - name: DD_TRACE_SAMPLE_RATE
-              value: "1"
+                  fieldPath: status.podIP
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "k8s.pod.ip=$(POD_IP),service.name=golang-demo-ping,deployment.environment=prod,service.version=0.0.1"
 
             - name: PING_TARGET_URL
               value: http://golang-demo-app:80
