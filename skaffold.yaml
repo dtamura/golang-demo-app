@@ -1,0 +1,14 @@
+apiVersion: skaffold/v2beta29
+kind: Config
+metadata:
+  name: golang-demo-ping
+
+build:
+  artifacts:
+  - image: asia-docker.pkg.dev/dtamura-service01/containers/golang-demo-ping
+    docker:
+      dockerfile: Dockerfile
+deploy:
+  kustomize:
+    paths:
+    - deployments

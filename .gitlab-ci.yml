@@ -1,0 +1,11 @@
+stages:
+  - build
+
+build:
+  stage: build
+  image: google/cloud-sdk:latest
+  script:
+    - |
+      echo ${GCP_CREDENTIALS} | base64 -d > /tmp/gitlab-key.json
+      gcloud auth activate-service-account --key-file /tmp/gitlab-key.json
+      gcloud builds submit --config cloudbuild.yaml --substitutions=_COMMIT_SHA="$CI_COMMIT_SHORT_SHA",_APP_NAME="golang-demo-ping"

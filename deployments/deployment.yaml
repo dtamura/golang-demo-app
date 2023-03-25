@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: golang-demo-ping
+spec:
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 5
+      maxUnavailable: 0
+  replicas: 1
+  selector:
+    matchLabels:
+      app: golang-demo-ping
+  template:
+    metadata:
+      labels:
+        app: golang-demo-ping
+      annotations:
+        apm.datadoghq.com/env: '{ "DD_ENV": "prod", "DD_SERVICE": "golang-demo-ping"}'
+        ad.datadoghq.com/app.logs: '[{}]'
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: app
+          image: asia-docker.pkg.dev/dtamura-service01/containers/golang-demo-ping:v0.0.1
+          ports:
+            - containerPort: 3000
+          env:
+            - name: DD_AGENT_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: DD_ENV
+              value: prod
+            - name: DD_SERVICE
+              value: golang-demo-ping
+            - name: DD_VERSION
+              value: "0.0.1"
+            - name: DD_TRACE_SAMPLE_RATE
+              value: "1"
+
+            - name: PING_TARGET_URL
+              value: http://golang-demo-app:80
+
+          readinessProbe:
+            initialDelaySeconds: 5
+            periodSeconds: 3
+            failureThreshold: 5
+            httpGet:
+              path: /healthz
+              port: 3000
+              scheme: HTTP
+          imagePullPolicy: Always
+          resources:
+            requests:
+              cpu: 100m
+              memory: 200Mi
+            limits:
+              cpu: 100m
+              memory: 200Mi

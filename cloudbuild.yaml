@@ -1,0 +1,12 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', 'asia-docker.pkg.dev/dtamura-service01/containers/${_APP_NAME}:${_COMMIT_SHA}', '.']
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', 'asia-docker.pkg.dev/dtamura-service01/containers/${_APP_NAME}:${_COMMIT_SHA}']
+options:
+  machineType: 'N1_HIGHCPU_8'
+tags: ['${_APP_NAME}']
+logsBucket: dtamura-service01_cloudbuild
+substitutions:
+  _APP_NAME: app
+  _COMMIT_SHA: latest
