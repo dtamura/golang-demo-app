@@ -24,3 +24,10 @@ or Cloud Build
 ```sh
 gcloud builds submit -t asia-docker.pkg.dev/dtamura-service01/containers/golang-demo-ping:latest
 ```
+
+
+Require
+--------------------
+- docker
+- gcloud
+- skaffold
