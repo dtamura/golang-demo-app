@@ -28,8 +28,12 @@ spec:
           ports:
             - containerPort: 3000
           env:
+            - name: DD_AGENT_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: http://opentelemetry-collector.opentelemetry-collector:4318
+              value: http://$(DD_AGENT_HOST):4318
             - name: POD_IP
               valueFrom:
                 fieldRef:
