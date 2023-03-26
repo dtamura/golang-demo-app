@@ -29,5 +29,7 @@ gcloud builds submit -t asia-docker.pkg.dev/dtamura-service01/containers/golang-
 Require
 --------------------
 - docker
+    - loki plugin https://grafana.com/docs/loki/latest/clients/docker-driver/
+
 - gcloud
 - skaffold
