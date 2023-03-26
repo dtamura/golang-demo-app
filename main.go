@@ -55,6 +55,7 @@ func setupRouter() *gin.Engine {
 	// Ping test
 	r.GET("/ping", gin.WrapF(pingHandler))
 	r.GET("/healthz", gin.WrapF(healthzHandler))
+	r.GET("/sendmail", gin.WrapF(sendmailHandler))
 
 	return r
 }
