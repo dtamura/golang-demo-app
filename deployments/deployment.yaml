@@ -24,7 +24,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: app
-          image: asia-docker.pkg.dev/dtamura-service01/containers/golang-demo-ping:v0.0.1
+          image: asia-docker.pkg.dev/dtamura-service01/containers/golang-demo-ping:v0.0.3
           ports:
             - containerPort: 3000
           env:
@@ -39,7 +39,7 @@ spec:
                 fieldRef:
                   fieldPath: status.podIP
             - name: OTEL_RESOURCE_ATTRIBUTES
-              value: "k8s.pod.ip=$(POD_IP),service.name=golang-demo-ping,deployment.environment=prod,service.version=0.0.1"
+              value: "k8s.pod.ip=$(POD_IP),service.name=golang-demo-ping,deployment.environment=prod,service.version=0.0.3"
 
             - name: PING_TARGET_URL
               value: http://golang-demo-app:80

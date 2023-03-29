@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,18 +12,10 @@ import (
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 
-	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+	"github.com/opentracing-contrib/go-gin/ginhttp"
 
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
-	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/sdk/resource"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-)
-
-var (
-	tracer = otel.Tracer("test-tracer")
+	opentracing "github.com/opentracing/opentracing-go"
+	jaegercfg "github.com/uber/jaeger-client-go/config"
 )
 
 func init() {
@@ -48,14 +40,13 @@ func setupRouter() *gin.Engine {
 
 	r := gin.New()
 
-	r.Use(gin.Recovery()) // panic時に500エラーを返却
-	r.Use(otelgin.Middleware("", otelgin.WithFilter(ignoreTracingRequest)))
+	r.Use(gin.Recovery())                                 // panic時に500エラーを返却
+	r.Use(ginhttp.Middleware(opentracing.GlobalTracer())) // TODO: 無視の設定は？
 	r.Use(loggingHandler)
 
 	// Ping test
 	r.GET("/ping", gin.WrapF(pingHandler))
 	r.GET("/healthz", gin.WrapF(healthzHandler))
-	r.GET("/sendmail", gin.WrapF(sendmailHandler))
 
 	return r
 }
@@ -65,40 +56,33 @@ func ignoreTracingRequest(r *http.Request) bool {
 	return !(r.RequestURI == "/healthz" || strings.HasPrefix(r.RequestURI, "/static"))
 }
 
-func initProvider() (func(context.Context) error, error) {
-	ctx := context.Background()
-
-	resource, err := resource.New(ctx,
-		resource.WithAttributes(
-		// the service name used to display traces in backends
-		),
-	)
+func initTracer() io.Closer {
+	cfg, err := jaegercfg.FromEnv()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create resource: %w", err)
+		// parsing errors might happen here, such as when we get a string where we expect a number
+		log.Printf("Could not parse Jaeger env vars: %s", err.Error())
+		return nil
+	}
+	cfg.Sampler.Param = 1
+
+	tracer, closer, err := cfg.NewTracer()
+	if err != nil {
+		log.Printf("Could not initialize jaeger tracer: %s", err.Error())
+		return nil
 	}
 
-	client := otlptracehttp.NewClient()
-	exporter, err := otlptrace.New(ctx, client)
-	if err != nil {
-		return nil, fmt.Errorf("creating OTLP trace exporter: %w", err)
-	}
+	opentracing.SetGlobalTracer(tracer)
 
-	tracerProvider := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
-		sdktrace.WithResource(resource),
-	)
-	otel.SetTracerProvider(tracerProvider)
-	otel.SetTextMapPropagator(propagation.TraceContext{})
-
-	return tracerProvider.Shutdown, nil
+	return closer
 }
 
 func main() {
-	// init Otel
-	shutdown, err := initProvider()
-	if err != nil {
-		log.Fatal(err)
+	// init Tracer
+	closer := initTracer()
+	if closer == nil {
+		log.Fatal("Unable to init Tracer")
 	}
+	defer closer.Close()
 
 	// Gin mode:
 	//  - using env:   export GIN_MODE=release
@@ -136,10 +120,6 @@ func main() {
 	// Doesn't block if no connections, but will otherwise wait
 	// until the timeout deadline.
 	srv.Shutdown(ctx)
-
-	if err := shutdown(ctx); err != nil { // Otel
-		log.Fatal("failed to shutdown TracerProvider: %w", err)
-	}
 
 	// Optionally, you could run srv.Shutdown in a goroutine and block on
 	// <-ctx.Done() if your application should wait for other services

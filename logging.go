@@ -2,13 +2,10 @@ package main
 
 import (
 	"net/http"
-	"os"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
-	"go.opentelemetry.io/otel/trace"
 )
 
 func loggingHandler(c *gin.Context) {
@@ -22,9 +19,6 @@ func loggingHandler(c *gin.Context) {
 	start := time.Now()
 	path := c.Request.URL.Path
 	raw := c.Request.URL.RawQuery
-
-	span := trace.SpanFromContext(c.Request.Context())
-	ddLog := getDDLogFields(span)
 
 	c.Next()
 
@@ -50,34 +44,8 @@ func loggingHandler(c *gin.Context) {
 			"latency":    latency,
 			"error":      errorMessage,
 		},
-		"dd": ddLog,
 	}).Info()
 
-}
-
-// ref: https://docs.datadoghq.com/ja/tracing/other_telemetry/connect_logs_and_traces/opentelemetry/?tab=go
-func getDDLogFields(span trace.Span) log.Fields {
-	return log.Fields{
-		"service":  os.Getenv("DD_SERVICE"),
-		"version":  os.Getenv("DD_VERSION"),
-		"env":      os.Getenv("DD_ENV"),
-		"trace_id": convertTraceID(span.SpanContext().TraceID().String()),
-		"span_id":  convertTraceID(span.SpanContext().SpanID().String()),
-	}
-}
-
-func convertTraceID(id string) string {
-	if len(id) < 16 {
-		return ""
-	}
-	if len(id) > 16 {
-		id = id[16:]
-	}
-	intValue, err := strconv.ParseUint(id, 16, 64)
-	if err != nil {
-		return ""
-	}
-	return strconv.FormatUint(intValue, 10)
 }
 
 func headersFromRequest(r *http.Request) log.Fields {

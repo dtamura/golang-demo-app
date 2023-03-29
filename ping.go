@@ -4,21 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
 
+	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
 	log "github.com/sirupsen/logrus"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 )
 
 func pingHandler(w http.ResponseWriter, r *http.Request) {
+	span, ctx := opentracing.StartSpanFromContext(r.Context(), "ping-handler")
+	defer span.Finish()
 
-	span := trace.SpanFromContext(r.Context())
-
-	msg := ping(r.Context())
-	log.WithFields(log.Fields{
-		"dd": getDDLogFields(span),
-	}).Info(msg)
-	span.SetAttributes(attribute.String("ping", msg))
+	msg := ping(ctx)
+	log.WithFields(log.Fields{}).Info(msg)
+	span.SetTag("ping", msg)
 
 	// Response
 	w.WriteHeader(http.StatusOK)
@@ -26,48 +25,47 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func ping(ctx context.Context) string {
-	_, span := tracer.Start(ctx, "ping")
-	defer span.End()
+	span, childCtx := opentracing.StartSpanFromContext(ctx, "ping")
+	defer span.Finish()
 
-	// // create http request
-	// client := &http.Client{}
+	// create http request
+	client := &http.Client{}
 
-	// target := os.Getenv("PING_TARGET_URL")
-	// req, err := http.NewRequest("GET", target+"/ping", nil)
-	// if err != nil {
-	// 	log.WithFields(log.Fields{
-	// 		"dd": getDDLogFields(span),
-	// 	}).Error(err)
-	// 	return ""
-	// }
-	// err = tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(req.Header))
-	// if err != nil {
-	// 	log.WithFields(log.Fields{
-	// 		"dd": getDDLogFields(span),
-	// 	}).Warn(err)
-	// }
-	// req.Header.Add("Content-Type", "application/json")
+	target := os.Getenv("PING_TARGET_URL")
+	req, err := http.NewRequestWithContext(childCtx, "GET", target+"/ping", nil)
+	if err != nil {
+		log.WithFields(log.Fields{}).Error(err)
+		return ""
+	}
+	req.Header.Add("Content-Type", "application/json")
 
-	// // Start Request
-	// resp, err := client.Do(req)
-	// if err != nil {
-	// 	log.WithFields(log.Fields{
-	// 		"dd": getDDLogFields(span),
-	// 	}).Error(err)
-	// 	span.Finish(tracer.WithError(err))
-	// 	return ""
-	// }
-	// defer resp.Body.Close()
+	tracer := opentracing.GlobalTracer()
+	carrier := opentracing.HTTPHeadersCarrier(req.Header)
+	err = tracer.Inject(span.Context(), opentracing.HTTPHeaders, carrier)
+	if err != nil {
+		log.Errorf("Error non-nil %v", err)
+		span.SetTag(string(ext.Error), true)
+		span.SetTag("msg", err)
+	}
 
-	// var data map[string]string
-	// if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-	// 	log.WithFields(log.Fields{
-	// 		"dd": getDDLogFields(span),
-	// 	}).Error(err)
-	// 	span.Finish(tracer.WithError(err))
-	// 	return ""
-	// }
-	// span.Finish(tracer.WithError(err))
+	// Start Request
+	resp, err := client.Do(req)
+	if err != nil {
+		log.WithFields(log.Fields{}).Error(err)
+		span.SetTag(string(ext.Error), true)
+		span.SetTag("msg", err)
+		return ""
+	}
+	defer resp.Body.Close()
 
-	return "ping"
+	var data map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		log.WithFields(log.Fields{}).Error(err)
+		span.SetTag(string(ext.Error), true)
+		span.SetTag("msg", err)
+		return ""
+	}
+	span.SetTag("error", err)
+
+	return data["msg"]
 }

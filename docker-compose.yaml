@@ -3,8 +3,10 @@ services:
   app:
     build: .
     environment:
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otelcol:4318
-      - OTEL_RESOURCE_ATTRIBUTES=service.name=golang-demo-ping,deployment.environment=prod,service.version=0.0.1
+      - JAEGER_SERVICE_NAME=golang-demo-ping
+      - JAEGER_TAGS=deployment.environment=prod,service.version=0.0.1
+      - JAEGER_AGENT_HOST=jaeger
+      - JAEGER_AGENT_PORT=6831
     ports:
       - 8080:3000
     logging:
@@ -49,6 +51,7 @@ services:
     ports:
       - 16686:16686                    # Jaeger UI
       - "4317"                           # OTLP gRPC default port
+      - "6831"
     environment:
       - COLLECTOR_OTLP_ENABLED=true
       - METRICS_STORAGE_TYPE=prometheus
