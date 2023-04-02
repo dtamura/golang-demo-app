@@ -20,8 +20,12 @@ kind: BackendConfig
 metadata:
   name: golang-demo-backendconfig
 spec:
-  securityPolicy:
-    name: "security-policy"
+  iap:
+    enabled: true
+    oauthclientCredentials:
+      secretName: oauth-credentials
+  # securityPolicy: 
+  #   name: "security-policy"
   timeoutSec: 30
   logging:
     enable: true

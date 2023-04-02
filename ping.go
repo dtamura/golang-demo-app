@@ -14,6 +14,11 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 
 	span := trace.SpanFromContext(r.Context())
 
+	email := r.Header.Get("X-Goog-Authenticated-User-Email")
+	if email != "" {
+		span.SetAttributes((attribute.String("X-Goog-Authenticated-User-Email", email)))
+	}
+
 	msg := ping(r.Context())
 	log.WithFields(log.Fields{
 		"dd": getDDLogFields(span),
