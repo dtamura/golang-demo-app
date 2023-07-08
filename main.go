@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,15 +17,23 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
+type instruments struct {
+	httpReqCounter metric.Int64Counter
+}
+
 var (
 	tracer = otel.Tracer("test-tracer")
+	insts  *instruments
 )
 
 func init() {
@@ -42,6 +52,35 @@ func init() {
 	log.SetOutput(os.Stdout)
 
 	log.SetLevel(log.InfoLevel)
+
+	insts = newInstruments()
+}
+
+func newInstruments() *instruments {
+	mp := otel.GetMeterProvider()
+	meter := mp.Meter("my_app")
+	counter, err := meter.Int64Counter("http_requests_total",
+		metric.WithDescription("リクエスト数"),
+		metric.WithUnit("req"),
+	)
+	if err != nil {
+		log.Errorf("Failed to register counter %v", err)
+	}
+	_, err = meter.Float64ObservableGauge("app_temperature",
+		metric.WithUnit("degree"),
+		metric.WithFloat64Callback(func(ctx context.Context, obsrv metric.Float64Observer) error {
+			rand.Seed(time.Now().UnixNano())
+			obsrv.Observe(rand.Float64() * 30.0)
+			return nil
+		}),
+	)
+	if err != nil {
+		log.Errorf("Failed to register gauge %v", err)
+	}
+
+	return &instruments{
+		httpReqCounter: counter,
+	}
 }
 
 func setupRouter() *gin.Engine {
@@ -69,9 +108,7 @@ func initProvider() (func(context.Context) error, error) {
 	ctx := context.Background()
 
 	resource, err := resource.New(ctx,
-		resource.WithAttributes(
-		// the service name used to display traces in backends
-		),
+		resource.WithAttributes(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create resource: %w", err)
@@ -90,7 +127,25 @@ func initProvider() (func(context.Context) error, error) {
 	otel.SetTracerProvider(tracerProvider)
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 
-	return tracerProvider.Shutdown, nil
+	// Metric
+	metricExporter, err := otlpmetrichttp.New(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	reader := sdkmetric.NewPeriodicReader(metricExporter)
+	mp := sdkmetric.NewMeterProvider(
+		sdkmetric.WithResource(resource),
+		sdkmetric.WithReader(reader),
+	)
+	otel.SetMeterProvider(mp)
+
+	shutdown := func(ctx context.Context) error {
+		err1 := tracerProvider.Shutdown(ctx)
+		err2 := mp.Shutdown(ctx)
+		return errors.New(err1.Error() + err2.Error())
+	}
+
+	return shutdown, nil
 }
 
 func main() {

@@ -5,6 +5,7 @@ services:
     environment:
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otelcol:4318
       - OTEL_RESOURCE_ATTRIBUTES=service.name=golang-demo-ping,deployment.environment=prod,service.version=0.0.1
+      - OTEL_METRIC_EXPORT_INTERVAL=1000
     ports:
       - 8080:3000
     logging:

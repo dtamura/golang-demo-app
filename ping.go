@@ -25,6 +25,9 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	}).Info(msg)
 	span.SetAttributes(attribute.String("ping", msg))
 
+	// Metric
+	insts.httpReqCounter.Add(r.Context(), 1)
+
 	// Response
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"msg": msg})
