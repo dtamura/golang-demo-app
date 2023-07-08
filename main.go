@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
 
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
@@ -22,8 +24,14 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
+type metrics struct {
+	httpReqCounter   *prometheus.CounterVec
+	temperatureGauge prometheus.Gauge
+}
+
 var (
-	tracer = otel.Tracer("test-tracer")
+	tracer            = otel.Tracer("test-tracer")
+	metricsCollectors *metrics
 )
 
 func init() {
@@ -44,6 +52,28 @@ func init() {
 	log.SetLevel(log.InfoLevel)
 }
 
+func newMetrics(reg prometheus.Registerer) *metrics {
+	httpReqCounter := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "http_requests_total",
+			Help: "リクエスト数のトータル",
+		},
+		[]string{"code", "method"},
+	)
+	tempGage := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "app_temperature",
+		Help: "温度",
+	})
+	m := &metrics{
+		httpReqCounter:   httpReqCounter,
+		temperatureGauge: tempGage,
+	}
+	reg.MustRegister(m.httpReqCounter)
+	reg.MustRegister(m.temperatureGauge)
+
+	return m
+}
+
 func setupRouter() *gin.Engine {
 
 	r := gin.New()
@@ -56,6 +86,12 @@ func setupRouter() *gin.Engine {
 	r.GET("/ping", gin.WrapF(pingHandler))
 	r.GET("/healthz", gin.WrapF(healthzHandler))
 	r.GET("/sendmail", gin.WrapF(sendmailHandler))
+
+	// Metrics
+	// r.GET("/metrics", gin.WrapF(promhttp.Handler().ServeHTTP))
+	reg := prometheus.NewRegistry()
+	metricsCollectors = newMetrics(reg)
+	r.GET("/metrics", gin.WrapF(promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}).ServeHTTP))
 
 	return r
 }

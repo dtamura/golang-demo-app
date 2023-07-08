@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 
+	"github.com/prometheus/client_golang/prometheus"
 	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -20,10 +22,22 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	msg := ping(r.Context())
+
 	log.WithFields(log.Fields{
 		"dd": getDDLogFields(span),
 	}).Info(msg)
 	span.SetAttributes(attribute.String("ping", msg))
+
+	// Metrics
+	metricsCollectors.httpReqCounter.With(prometheus.Labels{"code": "200", "method": "GET"}).Inc()
+
+	temperature := .0
+	if temp := r.URL.Query().Get("temp"); temp != "" {
+		if t, err := strconv.ParseFloat(temp, 64); err == nil {
+			temperature = t
+		}
+	}
+	metricsCollectors.temperatureGauge.Set(temperature)
 
 	// Response
 	w.WriteHeader(http.StatusOK)
