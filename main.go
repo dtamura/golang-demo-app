@@ -12,12 +12,14 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
 
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+	prometheusExporter "go.opentelemetry.io/otel/exporters/prometheus"
 
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/metric"
@@ -50,10 +52,8 @@ func init() {
 	// Output to stdout instead of the default stderr
 	// Can be any io.Writer, see below for File example
 	log.SetOutput(os.Stdout)
-
 	log.SetLevel(log.InfoLevel)
 
-	insts = newInstruments()
 }
 
 func newInstruments() *instruments {
@@ -68,6 +68,7 @@ func newInstruments() *instruments {
 	}
 	_, err = meter.Float64ObservableGauge("app_temperature",
 		metric.WithUnit("degree"),
+		metric.WithDescription("温度"),
 		metric.WithFloat64Callback(func(ctx context.Context, obsrv metric.Float64Observer) error {
 			rand.Seed(time.Now().UnixNano())
 			obsrv.Observe(rand.Float64() * 30.0)
@@ -99,12 +100,24 @@ func setupRouter() *gin.Engine {
 	return r
 }
 
+func setupPrometheus(r *gin.Engine) *prometheusExporter.Exporter {
+	// Prometheus Endpoint
+	reg := prometheus.NewRegistry()
+	metricExporter, err := prometheusExporter.New(prometheusExporter.WithRegisterer(reg))
+	if err != nil {
+		log.Fatalf("create prometheus exporter error: %v", err)
+	}
+	r.GET("/metrics", gin.WrapF(promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}).ServeHTTP))
+
+	return metricExporter
+}
+
 // ロギング・トレース対象外
 func ignoreTracingRequest(r *http.Request) bool {
 	return !(r.RequestURI == "/healthz" || strings.HasPrefix(r.RequestURI, "/static"))
 }
 
-func initProvider() (func(context.Context) error, error) {
+func initProvider(r *gin.Engine) (func(context.Context) error, error) {
 	ctx := context.Background()
 
 	resource, err := resource.New(ctx,
@@ -128,11 +141,7 @@ func initProvider() (func(context.Context) error, error) {
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 
 	// Metric
-	metricExporter, err := otlpmetrichttp.New(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-	reader := sdkmetric.NewPeriodicReader(metricExporter)
+	reader := setupPrometheus(r).Reader
 	mp := sdkmetric.NewMeterProvider(
 		sdkmetric.WithResource(resource),
 		sdkmetric.WithReader(reader),
@@ -149,11 +158,6 @@ func initProvider() (func(context.Context) error, error) {
 }
 
 func main() {
-	// init Otel
-	shutdown, err := initProvider()
-	if err != nil {
-		log.Fatal(err)
-	}
 
 	// Gin mode:
 	//  - using env:   export GIN_MODE=release
@@ -161,6 +165,14 @@ func main() {
 	gin.SetMode(gin.ReleaseMode)
 
 	router := setupRouter()
+
+	// init Otel
+	insts = newInstruments()
+	shutdown, err := initProvider(router)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	srv := &http.Server{
 		Handler:      router,
 		Addr:         "0.0.0.0:3000",
