@@ -48,7 +48,6 @@ func init() {
 	// Output to stdout instead of the default stderr
 	// Can be any io.Writer, see below for File example
 	log.SetOutput(os.Stdout)
-
 	log.SetLevel(log.InfoLevel)
 }
 
@@ -87,13 +86,13 @@ func setupRouter() *gin.Engine {
 	r.GET("/healthz", gin.WrapF(healthzHandler))
 	r.GET("/sendmail", gin.WrapF(sendmailHandler))
 
-	// Metrics
-	// r.GET("/metrics", gin.WrapF(promhttp.Handler().ServeHTTP))
+	return r
+}
+
+func setupPrometheus(r *gin.Engine) {
 	reg := prometheus.NewRegistry()
 	metricsCollectors = newMetrics(reg)
 	r.GET("/metrics", gin.WrapF(promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}).ServeHTTP))
-
-	return r
 }
 
 // ロギング・トレース対象外
@@ -130,18 +129,21 @@ func initProvider() (func(context.Context) error, error) {
 }
 
 func main() {
-	// init Otel
-	shutdown, err := initProvider()
-	if err != nil {
-		log.Fatal(err)
-	}
 
 	// Gin mode:
 	//  - using env:   export GIN_MODE=release
 	//  - using code:  gin.SetMode(gin.ReleaseMode)
 	gin.SetMode(gin.ReleaseMode)
-
 	router := setupRouter()
+
+	// init Otel
+	shutdown, err := initProvider()
+	if err != nil {
+		log.Fatal(err)
+	}
+	// setup Prometheus
+	setupPrometheus(router)
+
 	srv := &http.Server{
 		Handler:      router,
 		Addr:         "0.0.0.0:3000",
