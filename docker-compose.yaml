@@ -7,13 +7,13 @@ services:
       - OTEL_RESOURCE_ATTRIBUTES=service.name=golang-demo-ping,deployment.environment=prod,service.version=0.0.1
     ports:
       - 8080:3000
-    logging:
+    logging: &logging
       driver: loki
       options: 
         loki-url: http://127.0.0.1:3100/loki/api/v1/push
 
   otelcol:
-    image: otel/opentelemetry-collector-contrib:0.70.0
+    image: otel/opentelemetry-collector-contrib:0.81.0
     container_name: otel-col
     deploy:
       resources:
@@ -30,6 +30,61 @@ services:
       - "8888"          # metrics endpoint
     depends_on:
       - jaeger
+    logging: *logging
+
+  prometheus:
+    image: quay.io/prometheus/prometheus:v2.45.0
+    container_name: prometheus
+    command:
+      - --web.console.templates=/etc/prometheus/consoles
+      - --web.console.libraries=/etc/prometheus/console_libraries
+      - --storage.tsdb.retention.time=1h
+      - --config.file=/etc/prometheus/prometheus-config.yaml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+      - --web.route-prefix=/
+      - --enable-feature=exemplar-storage # 
+    volumes:
+      - ./prometheus-config.yaml:/etc/prometheus/prometheus-config.yaml
+    deploy:
+      resources:
+        limits:
+          memory: 300M
+    ports:
+      - 9090:9090
+    logging: *logging
+
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:latest
+    ports:
+      - '8428:8428'
+    volumes:
+      - 'victoriametrics-data:/victoria-metrics-data'
+    command:
+      -storageDataPath=/victoria-metrics-data
+      -retentionPeriod=30d
+    logging: *logging
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+      - '--collector.processes'
+      - '--collector.cgroups'
+      - '--collector.tcpstat'
+    expose:
+      - 9100
+    logging: *logging
+
 
   jaeger:
     image: jaegertracing/all-in-one
@@ -52,14 +107,7 @@ services:
     environment:
       - COLLECTOR_OTLP_ENABLED=true
       - METRICS_STORAGE_TYPE=prometheus
-
-  loki:
-    image: grafana/loki:2.7.3
-    ports:
-      - "3100:3100"
-    command: -config.file=/etc/loki/local-config.yaml
-    volumes:
-      - loki-data:/data/loki
+    logging: *logging
 
   promtail:
     image: grafana/promtail:2.7.3
@@ -68,42 +116,22 @@ services:
       - /var/log:/var/log:ro
     command: -config.file=/etc/promtail/config.yml
 
-  prometheus:
-    image: quay.io/prometheus/prometheus:v2.34.0
-    container_name: prometheus
-    command:
-      - --web.console.templates=/etc/prometheus/consoles
-      - --web.console.libraries=/etc/prometheus/console_libraries
-      - --storage.tsdb.retention.time=1h
-      - --config.file=/etc/prometheus/prometheus-config.yaml
-      - --storage.tsdb.path=/prometheus
-      - --web.enable-lifecycle
-      - --web.route-prefix=/
-      - --enable-feature=exemplar-storage
-    volumes:
-      - ./prometheus-config.yaml:/etc/prometheus/prometheus-config.yaml
-    deploy:
-      resources:
-        limits:
-          memory: 300M
+  alertmanager:
+    image: prom/alertmanager:latest
     ports:
-      - 9090:9090
-
-  node-exporter:
-    image: prom/node-exporter:latest
-    container_name: node-exporter
-    restart: unless-stopped
+      - '9093:9093'
     volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
-    command:
-      - '--path.procfs=/host/proc'
-      - '--path.rootfs=/rootfs'
-      - '--path.sysfs=/host/sys'
-      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
-    expose:
-      - 9100
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    logging: *logging
+
+  loki:
+    image: grafana/loki:latest
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - loki-data:/data/loki
+    logging: *logging
 
   grafana:
     image: grafana/grafana:9.1.0
@@ -118,13 +146,16 @@ services:
           memory: 75M
     ports:
       - 3000:3000
+    logging: *logging
 
   mailhog:
     image: mailhog/mailhog:v1.0.1
     ports:
       - 1025
       - '8025:8025'
+    logging: *logging
 
 volumes:
+  victoriametrics-data:
   grafana-data:
   loki-data:

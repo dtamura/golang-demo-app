@@ -13,8 +13,8 @@
 # limitations under the License.
 
 global:
-  evaluation_interval: 30s
-  scrape_interval: 5s
+  evaluation_interval: 10s
+  scrape_interval: 10s
 
 scrape_configs:
   - job_name: otel
@@ -34,5 +34,30 @@ scrape_configs:
       - targets: ["localhost:9090"]
 
   - job_name: "node"
+    scrape_interval: 1s
     static_configs:
       - targets: ["node-exporter:9100"]
+
+  - job_name: "app"
+    dns_sd_configs:
+      - names:
+          - app
+        type: A
+        port: 3000
+
+  - job_name: "loki"
+    dns_sd_configs:
+      - names:
+          - loki
+        type: A
+        port: 3100
+
+  - job_name: "promtail"
+    dns_sd_configs:
+      - names:
+          - promtail
+        type: A
+        port: 9080
+
+remote_write:
+  - url: http://victoriametrics:8428/api/v1/write
