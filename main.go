@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -30,6 +30,8 @@ import (
 )
 
 type instruments struct {
+	mu             sync.Mutex
+	temp           float64
 	httpReqCounter metric.Int64Counter
 }
 
@@ -70,8 +72,7 @@ func newInstruments() *instruments {
 		metric.WithUnit("degree"),
 		metric.WithDescription("温度"),
 		metric.WithFloat64Callback(func(ctx context.Context, obsrv metric.Float64Observer) error {
-			rand.Seed(time.Now().UnixNano())
-			obsrv.Observe(rand.Float64() * 30.0)
+			obsrv.Observe(insts.temp)
 			return nil
 		}),
 	)
@@ -81,6 +82,7 @@ func newInstruments() *instruments {
 
 	return &instruments{
 		httpReqCounter: counter,
+		temp:           .0,
 	}
 }
 
