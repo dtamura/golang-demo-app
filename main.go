@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -27,6 +28,8 @@ import (
 type metrics struct {
 	httpReqCounter   *prometheus.CounterVec
 	temperatureGauge prometheus.Gauge
+	mu               sync.Mutex
+	temp             float64
 }
 
 var (

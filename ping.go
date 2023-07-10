@@ -37,7 +37,10 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 			temperature = t
 		}
 	}
+	metricsCollectors.mu.Lock()
+	metricsCollectors.temp = temperature
 	metricsCollectors.temperatureGauge.Set(temperature)
+	metricsCollectors.mu.Unlock()
 
 	// Response
 	w.WriteHeader(http.StatusOK)
