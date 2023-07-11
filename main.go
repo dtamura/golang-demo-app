@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -29,6 +29,8 @@ import (
 
 type instruments struct {
 	httpReqCounter metric.Int64Counter
+	mu             sync.Mutex
+	temp           float64
 }
 
 var (
@@ -50,10 +52,7 @@ func init() {
 	// Output to stdout instead of the default stderr
 	// Can be any io.Writer, see below for File example
 	log.SetOutput(os.Stdout)
-
 	log.SetLevel(log.InfoLevel)
-
-	insts = newInstruments()
 }
 
 func newInstruments() *instruments {
@@ -68,9 +67,9 @@ func newInstruments() *instruments {
 	}
 	_, err = meter.Float64ObservableGauge("app_temperature",
 		metric.WithUnit("degree"),
+		metric.WithDescription("温度"),
 		metric.WithFloat64Callback(func(ctx context.Context, obsrv metric.Float64Observer) error {
-			rand.Seed(time.Now().UnixNano())
-			obsrv.Observe(rand.Float64() * 30.0)
+			obsrv.Observe(insts.temp)
 			return nil
 		}),
 	)
@@ -80,6 +79,7 @@ func newInstruments() *instruments {
 
 	return &instruments{
 		httpReqCounter: counter,
+		temp:           .0,
 	}
 }
 
@@ -154,6 +154,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	insts = newInstruments()
 
 	// Gin mode:
 	//  - using env:   export GIN_MODE=release

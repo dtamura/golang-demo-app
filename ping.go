@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel/attribute"
@@ -27,6 +28,15 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Metric
 	insts.httpReqCounter.Add(r.Context(), 1)
+	temperature := .0
+	if temp := r.URL.Query().Get("temp"); temp != "" {
+		if t, err := strconv.ParseFloat(temp, 64); err == nil {
+			temperature = t
+		}
+	}
+	insts.mu.Lock()
+	insts.temp = temperature
+	insts.mu.Unlock()
 
 	// Response
 	w.WriteHeader(http.StatusOK)
