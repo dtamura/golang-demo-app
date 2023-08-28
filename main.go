@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -13,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -25,7 +27,10 @@ func initProvider() (func(context.Context) error, error) {
 
 	resource, err := resource.New(ctx,
 		resource.WithAttributes(
-		// the service name used to display traces in backends
+			// the service name used to display traces in backends
+			semconv.ServiceName("runqslower"),
+			semconv.DeploymentEnvironment("uat"),
+			semconv.ServiceVersion("v0.1.0"),
 		),
 	)
 	if err != nil {
@@ -56,10 +61,16 @@ func main() {
 	}
 
 	// main
-	ctx, rootSpan := tracer.Start(context.Background(), "root")
+	t1, _ := time.Parse(time.RFC3339Nano, "2023-08-29T07:30:00.999999999+09:00")
+	ctx, rootSpan := tracer.Start(context.Background(), "root", trace.WithTimestamp(t1))
 	span := trace.SpanFromContext(ctx)
+	ctx, childSpan1 := tracer.Start(ctx, "child")
+	_, childChildSpan1 := tracer.Start(ctx, "chichi1")
 	span.SetAttributes((attribute.String("owner", "tamtam")))
-	rootSpan.End()
+	childChildSpan1.End()
+	childSpan1.End()
+	t2, _ := time.Parse(time.RFC3339Nano, "2023-08-29T07:31:00.999999999+09:00")
+	rootSpan.End(trace.WithTimestamp(t2))
 
 	// shutdown
 	if err := shutdown(ctx); err != nil { // Otel
